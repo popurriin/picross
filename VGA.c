@@ -305,9 +305,89 @@ int main(void) {
             index++;
         }
     }
-    
-    wait_for_vsync(); // swap front and back buffers on VGA vertical sync
-    pixel_buffer_start = *(pixel_ctrl_ptr + 1); // new back buffer
+
+    int board[8][8];
+    int cursor_x = 0;
+    int cursor_y = 0;
+    int click = 0;
+
+    char byte1 = 0;
+    char byte2 = 0;
+    char byte3 = 0;
+
+    volatile int* PS2_ptr = (int *) 0xFF200100; // PS/2 port address
+    int PS2_data, RVALID;
+
+    // PS/2 mouse needs to be reset (must be already plugged in)
+    *(PS2_ptr) = 0xFF;
+
+    while (1) {
+        // Clear screen to make way for user input:
+        clear_screen();
+        
+        // Print game board:
+        int index = 0;
+        for (int y = 0; y < RESOLUTION_Y; y++) {
+            for (int x = 0; x < RESOLUTION_X; x++) {
+                plot_pixel(x, y, Picross_Board[index]);
+                index++;
+            }
+        }
+
+        // Print box:
+        for (int y = 0; y < 19; y++) {
+            for (int x = 0; x < 19; x++) {
+                plot_pixel(x + 142, y + 63, 0xbd98);
+                index++;
+            }
+        }
+
+        // Print cursor:
+        for (int x = 0; x < 2; x++) {
+	        for (int y = 0; y < 2; y++) {
+		        plot_pixel(x + cursor_x, y + cursor_y, 0x0000);
+            }
+    	}
+
+        wait_for_vsync(); // swap front and back buffers on VGA vertical sync
+        pixel_buffer_start = *(pixel_ctrl_ptr + 1); // new back buffer
+
+        // Read data from mouse:
+        PS2_data = *(PS2_ptr); // Read the Data register in the PS/2 port
+        RVALID = PS2_data & 0x8000; // Extract RVALID field
+
+        if (RVALID) {
+            byte1 = byte2;
+            byte2 = byte3;
+            byte3 = PS2_data & 0xFF;
+
+            // Update based on mouse input:
+            if (byte1 == 0x08) {
+                cursor_x = cursor_x + (int)(byte2 - ((byte1 << 4) & 0x100));
+                cursor_y = cursor_y + (int)(byte3 - ((byte1 << 3) & 0x100));
+            } else if (byte1 > 0x08) {
+                click = byte1 & 0x3;
+            }
+        }
+
+        if ((byte2 == (char)0xAA) && (byte3 == (char)0x00)) {
+            // Mouse inserted; initialize sending of data
+            *(PS2_ptr) = 0xF4;
+        }
+
+        // Restrict the cursor to the screen:
+        if (cursor_x < 0) {
+            cursor_x = 0;
+        } else if (cursor_x > RESOLUTION_X) {
+            cursor_x = RESOLUTION_X - 1;
+        }
+
+        if (cursor_y < 0) {
+            cursor_y = RESOLUTION_Y;
+        } else if (cursor_y > RESOLUTION_Y) {
+            cursor_y = RESOLUTION_Y - 1;
+        }
+    }
 }
 
 void wait_for_vsync() {

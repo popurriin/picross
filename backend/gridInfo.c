@@ -1,13 +1,10 @@
 #include <stdbool.h>
 #include <stdio.h>
-#define PICROSS_BOARD_HEIGHT 8
-#define PICROSS_BOARD_WIDTH 8
+#include "gridInfo.h"
 
-enum grid_state {correct, crossed, empty};
 int row_info[PICROSS_BOARD_HEIGHT][PICROSS_BOARD_HEIGHT/2] = {0};
 int col_info[PICROSS_BOARD_WIDTH][PICROSS_BOARD_WIDTH/2] = {0};
 
-bool player_grid[PICROSS_BOARD_HEIGHT][PICROSS_BOARD_WIDTH];
 bool answer_grid[PICROSS_BOARD_HEIGHT][PICROSS_BOARD_WIDTH]=  
     {               {true,   true,  true,   false,  true,    true,  false,   true},
                     {false,  false, true,   false,  true,   true,   false,  true},

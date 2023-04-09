@@ -100,6 +100,37 @@ static const short int EIGHT[] = {
   0xffff, 0xffff, 0xf77e, 0xa4d7, 0x7b93, 0x83b4, 0xb578, 0xffdf, 0xffff, 0xffff
 };
 
+void print_numbers() {
+	short int * number_pixels;
+    for (int row = 0; row < 8; row++) {
+		int space = 0;
+		for(int index = 0; index < 4; index ++){
+            int x_delay = 0;
+            int y_delay = 0;
+
+            if (row >= PICROSS_BOARD_WIDTH/2) {
+                y_delay = 1;
+            }
+
+            // Current number in array
+            if (row_info[row][index] > 0) {
+				number_pixels = get_number_pixels(row_info[row][index]);
+                space++;
+                // Print number:
+                int num_index = 0;
+                for (int y = 0; y < 10; y++) {
+                    for (int x = 0; x < 10; x++) {
+                        if(number_pixels[num_index]!=(short int)0xffff){
+                            plot_pixel(x + 90 + x_delay+space*10, y + 68 + 21*row +  y_delay,number_pixels[num_index]);
+                        }
+                        num_index ++;
+                    }
+				
+                }
+            }
+		}
+    }
+}
 
 short int * get_number_pixels(int number){
 	switch (number)

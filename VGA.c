@@ -285,14 +285,57 @@ short int Xed[] = {
   0xffff, 0x83b4, 0x6af2, 0x6af2, 0xe6fc, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xce1a, 0x6af2, 0x6af2, 0x8c15, 0xffff
 };
 
+// Function initializations:
+void wait_for_vsync();
+void plot_pixel(int x, int y, short int line_color);
+void clear_screen();
+void print_boxes();
+void print_board();
+
+void set_A9_IRQ_stack(void);
+void config_GIC(void);
+void enable_A9_interrupts(void);
+void config_mouse();
+
+void __attribute__((interrupt)) __cs3_isr_irq(void);
+void __attribute__((interrupt)) __cs3_reset(void);
+void __attribute__((interrupt)) __cs3_isr_undef(void);
+void __attribute__((interrupt)) __cs3_isr_swi(void);
+void __attribute__((interrupt)) __cs3_isr_pabort(void);
+void __attribute__((interrupt)) __cs3_isr_dabort(void);
+void __attribute__((interrupt)) __cs3_isr_fiq(void);
+
+void PS2_ISR();
+
 // User board:
 int board[8][8];
 
 #define ABS(x) (((x) > 0) ? (x) : -(x))
 
-/* Screen size. */
+// Screen size:
 #define RESOLUTION_X 320
 #define RESOLUTION_Y 240
+
+// Interrupt constants:
+#define A9_ONCHIP_END 0xFFFFFFFF
+#define INT_DISABLE 0b11000000
+#define SVC_MODE 0b10011
+#define IRQ_MODE 0b10010
+#define INT_ENABLE 0b01000000
+#define MPCORE_GIC_CPUIF 0xFFFEC100
+#define ICCPMR 0x4
+#define ICCICR 0x0
+#define ENABLE 0x1
+#define MPCORE_GIC_DIST 0xFFFED000
+#define ICDDCR 0x0
+
+#define PS2_IRQ1 79
+#define PS2_IRQ2 89
+#define ICCIAR 0xC
+#define ICCEOIR 0x10
+
+// PS2 Mouse constants:
+#define PS2_ADDRESS 0xFF200100
 
 #define FALSE 0
 #define TRUE 1
@@ -301,8 +344,16 @@ int board[8][8];
 #include <stdio.h>
 
 volatile int pixel_buffer_start = FPGA_ONCHIP_BASE; // global variable
+int bytes_stored = FALSE;
+short byte_packets[3];
 
 int main(void) {
+    set_A9_IRQ_stack(); // initialize the stack pointer for IRQ mode
+    config_GIC(); // configure the general interrupt controller
+    config_mouse(); // configure PS2 mouse to generate interrupts
+    enable_A9_interrupts(); // enable interrupts
+
+
     volatile int * pixel_ctrl_ptr = (int *)0xFF203020;
 
     /* Read location of the pixel buffer from the pixel buffer controller */
@@ -324,42 +375,21 @@ int main(void) {
     pixel_buffer_start = *(pixel_ctrl_ptr + 1); // we draw on the back buffer
 
     clear_screen(); // pixel_buffer_start points to the pixel buffer
-
-    int index = 0;
-    for (int y = 0; y < RESOLUTION_Y; y++) {
-        for (int x = 0; x < RESOLUTION_X; x++) {
-            plot_pixel(x, y, Picross_Board[index]);
-            index++;
-        }
-    }
+    print_board();
 
     int cursor_x = 0;
     int cursor_y = 0;
     int click = 0;
 
-    char byte1 = 0;
-    char byte2 = 0;
-    char byte3 = 0;
-
-    volatile int* PS2_ptr = (int *) 0xFF200100; // PS/2 port address
+    int* PS2_ptr = (int *) PS2_ADDRESS; // PS/2 port address
     int PS2_data, RVALID;
 
     // PS/2 mouse needs to be reset (must be already plugged in)
     *(PS2_ptr) = 0xFF;
 
     while (1) {
-        // Clear screen to make way for user input:
         clear_screen();
-        
-        // Print game board:
-        int index = 0;
-        for (int y = 0; y < RESOLUTION_Y; y++) {
-            for (int x = 0; x < RESOLUTION_X; x++) {
-                plot_pixel(x, y, Picross_Board[index]);
-                index++;
-            }
-        }
-
+        print_board();
         print_boxes();
 
         // Print cursor:
@@ -372,27 +402,46 @@ int main(void) {
         wait_for_vsync(); // swap front and back buffers on VGA vertical sync
         pixel_buffer_start = *(pixel_ctrl_ptr + 1); // new back buffer
 
-        // Read data from mouse:
-        PS2_data = *(PS2_ptr); // Read the Data register in the PS/2 port
-        RVALID = PS2_data & 0x8000; // Extract RVALID field
+        while (bytes_stored == 0) {
+            // Wait for user input...
+            // Read data from mouse:
+            PS2_data = *(PS2_ptr); // Read the Data register in the PS/2 port
+            RVALID = PS2_data & 0x8000; // Extract RVALID field
 
-        if (RVALID) {
-            byte1 = byte2;
-            byte2 = byte3;
-            byte3 = PS2_data & 0xFF;
+            if (RVALID) {
+                byte_packets[0] = byte_packets[1];
+                byte_packets[1] = byte_packets[2];
+                byte_packets[2] = PS2_data & 0xFF;
+            }
 
-            // Update based on mouse input:
-            if (byte1 == 0x08) {
-                cursor_x = cursor_x + (int)(byte2 - ((byte1 << 4) & 0x100));
-                cursor_y = cursor_y + (int)(byte3 - ((byte1 << 3) & 0x100));
-            } else if (byte1 > 0x08) {
-                click = byte1 & 0x3;
+            if ((byte_packets[1] == 0xAA) && (byte_packets[2] == 0x00)) {
+                // Mouse inserted; initialize sending of data
+                *(PS2_ptr) = 0xF4;
+                clear_screen();
+                print_board();
             }
         }
 
-        if ((byte2 == (char)0xAA) && (byte3 == (char)0x00)) {
-            // Mouse inserted; initialize sending of data
-            *(PS2_ptr) = 0xF4;
+        bytes_stored = 0;
+
+        // Update based on mouse input:
+        cursor_x = cursor_x + (signed short)(((byte_packets[0] << 8) & 0x1000) | byte_packets[1]);
+        cursor_y = cursor_y + (signed short)(((byte_packets[0] << 7) & 0x100) | byte_packets[2]);
+
+        int clicked_x, clicked_y;
+        if (click != 0) {
+            clicked_x = (cursor_x - 142)/20;
+            clicked_y = (cursor_y - 61)/21;
+
+            if (clicked_x >= 0 && clicked_y >= 0 && (click == 0x1 && board[clicked_x][clicked_y] == 1) || (click == 0x2 && board[clicked_x][clicked_y] == -1)) { // If we want to unselect
+                board[clicked_x][clicked_y] = 0;
+            } else if (clicked_x >= 0 && clicked_y >= 0 && click == 0x1 && board[clicked_x][clicked_y] != -1) { // Left click; fill in square
+                board[clicked_x][clicked_y] = 1;
+            } else if (clicked_x >= 0 && clicked_y >= 0 && click == 0x2 && board[clicked_x][clicked_y] != 1) { // Right click; X square
+                board[clicked_x][clicked_y] = -1;
+            }
+
+            click = 0;
         }
 
         // Restrict the cursor to the screen:
@@ -411,7 +460,7 @@ int main(void) {
 }
 
 void wait_for_vsync() {
-    volatile int* pixel_ctrl_ptr = PIXEL_BUF_CTRL_BASE;
+    volatile int* pixel_ctrl_ptr = (int *) PIXEL_BUF_CTRL_BASE;
     register int status;
 
     *pixel_ctrl_ptr = 1;
@@ -419,8 +468,6 @@ void wait_for_vsync() {
     while ((status & 0x01) != 0) {
         status = *(pixel_ctrl_ptr + 3);
     }
-
-    return;
 }
 
 void plot_pixel(int x, int y, short int line_color) {
@@ -439,7 +486,6 @@ void clear_screen() {
             plot_pixel(x, y, 0x0000);
         }
     }
-    return;
 }
 
 void print_boxes() {
@@ -489,4 +535,134 @@ void print_boxes() {
             }
         }
     }
+}
+
+void print_board() {
+    int index = 0;
+    for (int y = 0; y < RESOLUTION_Y; y++) {
+        for (int x = 0; x < RESOLUTION_X; x++) {
+            plot_pixel(x, y, Picross_Board[index]);
+            index++;
+        }
+    }
+}
+
+// Initialize the banked stack pointer register for IRQ mode
+void set_A9_IRQ_stack(void) {
+    int stack, mode;
+    stack = A9_ONCHIP_END - 7; // top of A9 onchip memory, aligned to 8 bytes
+
+    /* change processor to IRQ mode with interrupts disabled */
+    mode = INT_DISABLE | IRQ_MODE;
+    asm("msr cpsr, %[ps]" : : [ps] "r"(mode));
+
+    /* set banked stack pointer */
+    asm("mov sp, %[ps]" : : [ps] "r"(stack));
+
+    /* go back to SVC mode before executing subroutine return! */
+    mode = INT_DISABLE | SVC_MODE;
+    asm("msr cpsr, %[ps]" : : [ps] "r"(mode));
+}
+
+// Turn on interrupts in the ARM processor
+void enable_A9_interrupts(void) {
+    int status = SVC_MODE | INT_ENABLE;
+    asm("msr cpsr, %[ps]" : : [ps] "r"(status));
+}
+
+void config_mouse() {
+    volatile int * PS2_ptr = (int *) PS2_ADDRESS;
+    *(PS2_ptr + 1) = 1;
+}
+
+void PS2_ISR() {
+    byte_packets[0] = 0;
+    byte_packets[1] = 0;
+    byte_packets[2] = 0;
+
+    int* PS2_ptr = (int *) PS2_ADDRESS; // PS/2 port address
+    int PS2_data, RVALID;
+
+    while (byte_packets[0] == 0) {
+        // Read data from mouse:
+        PS2_data = *(PS2_ptr); // Read the Data register in the PS/2 port
+        RVALID = PS2_data & 0x8000; // Extract RVALID field
+
+        if (RVALID) {
+            byte_packets[0] = byte_packets[1];
+            byte_packets[1] = byte_packets[2];
+            byte_packets[2] = PS2_data & 0xFF;
+        }
+
+        if ((byte_packets[1] == 0xAA) && (byte_packets[2] == 0x00)) {
+            // Mouse inserted; initialize sending of data
+            *(PS2_ptr) = 0xF4;
+            return;
+        }
+    }
+
+    bytes_stored = 1;
+}
+
+//Configure the Generic Interrupt Controller (GIC)
+void config_GIC(void) {
+    int address; // used to calculate register addresses
+
+    /* configure the HPS timer interrupt */
+    *((int *)0xFFFED8C4) = 0x01000000;
+    *((int *)0xFFFED118) = 0x00000080;
+
+    /* configure the FPGA interval timer and KEYs interrupts */
+    *((int *)0xFFFED848) = 0x00000101;
+    *((int *)0xFFFED108) = 0x00000300;
+
+    // Set Interrupt Priority Mask Register (ICCPMR). Enable interrupts of all priorities
+    address = MPCORE_GIC_CPUIF + ICCPMR;
+    *((int *)address) = 0xFFFF;
+
+    // Set CPU Interface Control Register (ICCICR). Enable signaling of interrupts
+    address = MPCORE_GIC_CPUIF + ICCICR;
+    *((int *)address) = ENABLE;
+    
+    // Configure the Distributor Control Register (ICDDCR) to send pending interrupts to CPUs
+    address = MPCORE_GIC_DIST + ICDDCR;
+    *((int *)address) = ENABLE;
+}
+
+// Define the IRQ exception handler
+void __attribute__((interrupt)) __cs3_isr_irq(void) {
+    // Read the ICCIAR from the processor interface
+    int address = MPCORE_GIC_CPUIF + ICCIAR;
+    int int_ID = *((int *)address);
+
+    if (int_ID == PS2_IRQ1 || int_ID == PS2_IRQ2) { // check if interrupt is from the HPS timer
+        PS2_ISR();
+    } else {
+        while (1); // if unexpected, then stay here
+    }
+    
+    // Write to the End of Interrupt Register (ICCEOIR)
+    address = MPCORE_GIC_CPUIF + ICCEOIR;
+    *((int *)address) = int_ID;
+    return;
+}
+
+// Define the remaining exception handlers
+void __attribute__((interrupt)) __cs3_reset(void) {
+    while (1);
+}
+void __attribute__((interrupt)) __cs3_isr_undef(void) {
+    while (1);
+}
+void __attribute__((interrupt)) __cs3_isr_swi(void) {
+    while (1);
+}
+void __attribute__((interrupt)) __cs3_isr_pabort(void){
+    while (1);
+}
+void __attribute__((interrupt)) __cs3_isr_dabort(void) {
+    while (1);
+}
+void __attribute__((interrupt)) __cs3_isr_fiq(void) {
+    while (1);
 }

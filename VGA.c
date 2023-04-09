@@ -16,6 +16,8 @@
 
 #define PICROSS_BOARD_HEIGHT 240
 #define PICROSS_BOARD_WIDTH 320
+#define BOX_WIDTH           20
+#define BOX_HEIGHT          21
 
 // array size is 153600
 static const short int Picross_Board[]  = {
@@ -489,6 +491,8 @@ void clear_screen() {
 }
 
 void print_boxes() {
+    int x_offset = 142;
+    int y_offset = 61;
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
             int x_delay = 0;
@@ -508,15 +512,15 @@ void print_boxes() {
                 // Print box:
                 for (int y = 0; y < 21; y++) {
                     for (int x = 0; x < 21; x++) {
-                        plot_pixel(x + 142 + 20*col + x_delay, y + 61 + 21*row + y_delay, 0x6af2);
+                        plot_pixel(x + x_offset + 20*col + x_delay, y + y_offset + 21*row + y_delay, 0x6af2);
                     }
                 }
             }
 
-            if (col > 3) {
+            if (col >= BOX_WIDTH/2) {
                 x_delay = 3;
             }
-            if (row > 3) {
+            if (row >= BOX_HEIGHT/2) {
                 y_delay = 4;
             }
 
@@ -524,10 +528,10 @@ void print_boxes() {
             if (board[row][col] == -1) {
                 int index = 0;
                 // Print X:
-                for (int y = 0; y < 20; y++) {
-                    for (int x = 0; x < 20; x++) {
+                for (int y = 0; y < BOX_WIDTH; y++) {
+                    for (int x = 0; x < BOX_WIDTH; x++) {
                         if (Xed[index] != (short int)0xffff) {
-                            plot_pixel(x + 142 + 20*col + x_delay, y + 63 + 20*row + y_delay, Xed[index]);
+                            plot_pixel(x + 142 + BOX_WIDTH*col + x_delay, y + 63 + BOX_WIDTH*row + y_delay, Xed[index]);
                         }
                         index++;
                     }

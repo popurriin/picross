@@ -102,8 +102,11 @@ static const short int EIGHT[] = {
 
 void print_numbers() {
 	short int * number_pixels;
+    int col;
     for (int row = 0; row < 8; row++) {
-		int space = 0;
+        col = row;
+		int space_row = 0;
+        int space_col = 0;
 		for(int index = 0; index < 4; index ++){
             int x_delay = 0;
             int y_delay = 0;
@@ -111,21 +114,41 @@ void print_numbers() {
             if (row >= PICROSS_BOARD_WIDTH/2) {
                 y_delay = 1;
             }
+            if (col >= PICROSS_BOARD_WIDTH/2) {
+                x_delay = 1;
+            }
 
             // Current number in array
             if (row_info[row][index] > 0) {
 				number_pixels = get_number_pixels(row_info[row][index]);
-                space++;
+                space_row++;
                 // Print number:
                 int num_index = 0;
                 for (int y = 0; y < 10; y++) {
                     for (int x = 0; x < 10; x++) {
                         if(number_pixels[num_index]!=(short int)0xffff){
-                            plot_pixel(x + 90 + x_delay+space*10, y + 68 + 21*row +  y_delay,number_pixels[num_index]);
+                            plot_pixel(x + 90 + x_delay+space_row*10, y + 68 + 21*row +  y_delay,number_pixels[num_index]);
                         }
                         num_index ++;
                     }
 				
+                }
+            }
+            
+            if(col_info[col][index] > 0){
+                number_pixels = get_number_pixels(col_info[row][index]);
+                number_pixels = get_number_pixels(col_info[col][index]);
+                space_col ++;
+                //Print number
+
+                int num_index_col = 0;
+                for(int y = 0; y < 10; y ++){
+                    for(int x = 0; x < 10; x++){
+                        if(number_pixels[num_index_col]!=(short int)0xffff){
+                            plot_pixel(x + 147 + 21*col + x_delay, y + 3+ y_delay +space_col*12,number_pixels[num_index_col]);
+                        }
+                        num_index_col++;
+                    }
                 }
             }
 		}

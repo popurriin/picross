@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/Users/User/OneDrive - University of Toronto/Picross/picross",
-      "program": "c:/Users/User/OneDrive - University of Toronto/Picross/picross/build/Debug/outDebug",
+      "cwd": "c:/Users/vjone/OneDrive/Documents/GitHub/picross",
+      "program": "c:/Users/vjone/OneDrive/Documents/GitHub/picross/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
